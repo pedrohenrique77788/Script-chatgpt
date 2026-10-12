@@ -1,0 +1,199 @@
+-- Serviços
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+
+-- ========== INTERFACE ==========
+local gui = Instance.new("ScreenGui")
+gui.Name = "FinalEnemyInterface"
+gui.ResetOnSpawn = false
+gui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+
+local btnToggle = Instance.new("TextButton")
+btnToggle.Size = UDim2.new(0, 160, 0, 35)
+btnToggle.Position = UDim2.new(0, 10, 0, 10)
+btnToggle.BackgroundColor3 = Color3.fromRGB(255, 0, 150)
+btnToggle.TextColor3 = Color3.new(1, 1, 1)
+btnToggle.Font = Enum.Font.GothamBold
+btnToggle.TextSize = 14
+btnToggle.Text = "Esconder Interface"
+btnToggle.Parent = gui
+Instance.new("UICorner", btnToggle).CornerRadius = UDim.new(0, 8)
+
+local frame = Instance.new("Frame")
+frame.Size = UDim2.new(0, 260, 0, 160)
+frame.Position = UDim2.new(0, 40, 0, 60)
+frame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+frame.Active = true
+frame.Draggable = true
+frame.Parent = gui
+Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 10)
+
+btnToggle.MouseButton1Click:Connect(function()
+    frame.Visible = not frame.Visible
+    btnToggle.Text = frame.Visible and "Esconder Interface" or "Mostrar Interface"
+end)
+
+local aba = Instance.new("Frame", frame)
+aba.Size = UDim2.new(1, 0, 1, -20)
+aba.Position = UDim2.new(0, 0, 0, 20)
+aba.BackgroundTransparency = 1
+
+local layout = Instance.new("UIListLayout", aba)
+layout.Padding = UDim.new(0, 8)
+local pad = Instance.new("UIPadding", aba)
+pad.PaddingTop = UDim.new(0, 10)
+pad.PaddingLeft = UDim.new(0, 10)
+
+local titulo = Instance.new("TextLabel", aba)
+titulo.Size = UDim2.new(1, -20, 0, 26)
+titulo.BackgroundTransparency = 1
+titulo.TextColor3 = Color3.new(1, 1, 1)
+titulo.Font = Enum.Font.GothamBold
+titulo.TextSize = 18
+titulo.Text = "Aimbot & ESP v3"
+
+local funcBtn = Instance.new("TextButton", aba)
+funcBtn.Size = UDim2.new(1, -20, 0, 34)
+funcBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+funcBtn.TextColor3 = Color3.new(1, 1, 1)
+funcBtn.TextSize = 15
+funcBtn.Text = "Aimbot: OFF"
+Instance.new("UICorner", funcBtn).CornerRadius = UDim.new(0, 6)
+
+local espBtn = Instance.new("TextButton", aba)
+espBtn.Size = UDim2.new(1, -20, 0, 34)
+espBtn.BackgroundColor3 = Color3.fromRGB(200, 0, 150)
+espBtn.TextColor3 = Color3.new(1, 1, 1)
+espBtn.TextSize = 15
+espBtn.Text = "ESP Rosa: ON"
+Instance.new("UICorner", espBtn).CornerRadius = UDim.new(0, 6)
+
+-- ========== VARIÁVEIS & FILTROS ==========
+local ScriptAtivo = false
+local ESP_Ativo = true
+local ScriptConns = {}
+local Highlights = {}
+local circleDrawing = nil
+local ESP_Color_Rosa = Color3.fromRGB(255, 0, 200)
+
+local function IsEnemy(player)
+    if not player.Team or not LocalPlayer.Team then return true end
+    return player.Team ~= LocalPlayer.Team
+end
+
+-- ========== ESP HIGHLIGHT MELHORADO ==========
+local function AtualizarESP()
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer and IsEnemy(p) and ESP_Ativo then
+            local char = p.Character
+            local hum = char and char:FindFirstChildOfClass("Humanoid")
+            
+            -- Só coloca highlight se estiver vivo
+            if char and hum and hum.Health > 0 then
+                if not Highlights[p] or Highlights[p].Parent == nil then
+                    local h = Instance.new("Highlight")
+                    h.FillColor = ESP_Color_Rosa
+                    h.OutlineColor = Color3.new(1, 1, 1)
+                    h.FillTransparency = 0.5
+                    h.Adornee = char
+                    h.Parent = game:GetService("CoreGui")
+                    Highlights[p] = h
+                else
+                    Highlights[p].Adornee = char -- Garante que o highlight siga o corpo
+                end
+            else
+                if Highlights[p] then Highlights[p]:Destroy() Highlights[p] = nil end
+            end
+        else
+            if Highlights[p] then Highlights[p]:Destroy() Highlights[p] = nil end
+        end
+    end
+end
+
+-- ========== AIMBOT VISIBILIDADE & DISTÂNCIA ==========
+local function isVisible(targetPos, charTarget)
+    local origin = Camera.CFrame.Position
+    local direction = (targetPos - origin)
+    local raycastParams = RaycastParams.new()
+    raycastParams.FilterDescendantsInstances = {LocalPlayer.Character, Camera}
+    raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
+    
+    local result = workspace:Raycast(origin, direction, raycastParams)
+    if result and result.Instance then
+        return result.Instance:IsDescendantOf(charTarget)
+    end
+    return false
+end
+
+-- ========== ATIVAÇÃO ==========
+local function AtivarScript()
+    ScriptAtivo = true
+    funcBtn.Text = "Aimbot: ON"
+
+    circleDrawing = Drawing.new("Circle")
+    circleDrawing.Radius = 50
+    circleDrawing.Color = Color3.new(1, 1, 1)
+    circleDrawing.Thickness = 2
+    circleDrawing.Filled = false -- Sem preenchimento
+    circleDrawing.Visible = true
+
+    ScriptConns.Main = RunService.RenderStepped:Connect(function()
+        circleDrawing.Position = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)
+        AtualizarESP() -- Atualiza o ESP rosa em tempo real
+        
+        local closestTarget = nil
+        local shortestDist = math.huge
+
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p ~= LocalPlayer and IsEnemy(p) then
+                local char = p.Character
+                local head = char and char:FindFirstChild("Head")
+                local hum = char and char:FindFirstChildOfClass("Humanoid")
+                local hrp = char and char:FindFirstChild("HumanoidRootPart")
+
+                -- Verifica se está vivo, no círculo e visível
+                if head and hum and hum.Health > 0 and hrp then
+                    local screenPos, onScreen = Camera:WorldToViewportPoint(head.Position)
+                    local screenVec = Vector2.new(screenPos.X, screenPos.Y)
+                    local distToCircle = (screenVec - circleDrawing.Position).Magnitude
+                    
+                    if onScreen and distToCircle <= circleDrawing.Radius then
+                        if isVisible(head.Position, char) then
+                            -- Prioriza o inimigo mais próximo do SEU personagem
+                            local worldDist = (LocalPlayer.Character.HumanoidRootPart.Position - hrp.Position).Magnitude
+                            if worldDist < shortestDist then
+                                shortestDist = worldDist
+                                closestTarget = head
+                            end
+                        end
+                    end
+                end
+            end
+        end
+
+        if closestTarget then
+            Camera.CFrame = CFrame.new(Camera.CFrame.Position, closestTarget.Position)
+        end
+    end)
+end
+
+local function DesativarScript()
+    ScriptAtivo = false
+    funcBtn.Text = "Aimbot: OFF"
+    if circleDrawing then circleDrawing.Visible = false circleDrawing:Remove() end
+    for _, c in pairs(ScriptConns) do c:Disconnect() end
+    for _, h in pairs(Highlights) do h:Destroy() end
+    Highlights = {}
+end
+
+funcBtn.MouseButton1Click:Connect(function()
+    if not ScriptAtivo then AtivarScript() else DesativarScript() end
+end)
+
+espBtn.MouseButton1Click:Connect(function()
+    ESP_Ativo = not ESP_Ativo
+    espBtn.Text = ESP_Ativo and "ESP Rosa: ON" or "ESP Rosa: OFF"
+end)
